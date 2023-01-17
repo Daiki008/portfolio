@@ -1,0 +1,138 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Application_Layer Template
+
+Parameters:
+  InstanceType:
+    Type: String
+    Default: t2.micro
+  DBInstanceIdentifier:
+    Type: String
+    Default: testRDS
+  DBInstanceType:
+    Type: String
+    Default: db.t2.micro
+  DBSubnetGroupDescription:
+    Type: String
+    Default: testRDSSubnetgroup
+  S3BucketName:
+    Type: String
+    Default: test-bucket-01-11
+
+Resources:
+# EC2を作成
+  testEC21a:
+    Type: AWS::EC2::Instance
+    Properties:
+      NetworkInterfaces:
+        - SubnetId: !ImportValue NetworkLayer-PublicSubnet1a
+          GroupSet:
+            - !ImportValue SecurityLayer-SecurityGroupEC2
+          DeviceIndex: 0
+      InstanceType: !Ref InstanceType
+      ImageId: ami-0bcc04d20228d0cf6
+      Tags:
+        - Key: Name
+          Value: testEC21a
+      KeyName: test-key
+  
+  testEC21c:
+    Type: AWS::EC2::Instance
+    Properties:
+      NetworkInterfaces:
+        - SubnetId: !ImportValue NetworkLayer-PublicSubnet1c
+          GroupSet:
+            - !ImportValue SecurityLayer-SecurityGroupEC2
+          DeviceIndex: 0
+      InstanceType: !Ref InstanceType
+      ImageId: ami-0bcc04d20228d0cf6
+      Tags:
+        - Key: Name
+          Value: testEC21c
+      KeyName: test-key
+      
+# RDSを作成
+  testRDS:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      AllocatedStorage : 20
+      DBInstanceClass: !Ref DBInstanceType
+      Port: 3306
+      StorageType: gp2
+      BackupRetentionPeriod: 7
+      MasterUsername: Kindai
+      MasterUserPassword: Da811Sy117Mi223
+      DBInstanceIdentifier: !Ref DBInstanceIdentifier
+      DBName: testRDS
+      Engine: mysql
+      EngineVersion: 8.0.23
+      DBSubnetGroupName: !Ref testRDSSubnetgroup
+      MultiAZ: true
+      VPCSecurityGroups:
+        - !ImportValue SecurityLayer-SecurityGroupRDS
+
+# RDSのサブネットグループを作成        
+  testRDSSubnetgroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: !Ref DBSubnetGroupDescription
+      DBSubnetGroupName: testRDSSubnetgroup
+      SubnetIds:
+        - !ImportValue NetworkLayer-PrivateSubnet1a
+        - !ImportValue NetworkLayer-PrivateSubnet1c
+        
+# ALBを配置
+  testALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      IpAddressType: ipv4
+      Name: testALB
+      Scheme: internet-facing
+      SecurityGroups:
+        - !ImportValue SecurityLayer-SecurityGroupALB
+      Subnets:
+        - !ImportValue NetworkLayer-PublicSubnet1a
+        - !ImportValue NetworkLayer-PublicSubnet1c
+      Tags:
+        - Key: Name
+          Value: testALB
+
+# ALBのターゲットグループの指定
+  ALBTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: ALBTargetGroup
+      Port: 80
+      Protocol: HTTP
+      Targets:
+        - Id: !Ref testEC21a
+          Port: 80
+        - Id: !Ref testEC21c
+          Port: 80
+      VpcId: !ImportValue NetworkLayer-testVPC
+      
+# ALBのリスナーの指定
+  ALBListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn:
+            !Ref ALBTargetGroup
+      LoadBalancerArn:
+        !Ref testALB
+      Port: 80
+      Protocol: HTTP
+      
+# S3を作成
+  testS3Bucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref S3BucketName
+      AccessControl: Private
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: True
+        BlockPublicPolicy: True
+        IgnorePublicAcls: True
+        RestrictPublicBuckets: True
+      VersioningConfiguration:
+        Status: Enabled
